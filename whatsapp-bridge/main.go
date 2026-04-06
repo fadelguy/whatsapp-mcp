@@ -31,6 +31,39 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ---------------------------------------------------------------------------
+// Allowlist filter
+//
+// By default NOTHING is stored — neither DMs nor groups.
+// To enable storage, set one or both env vars:
+//
+//   WHATSAPP_ALLOWED_DMS=972501234567,972509876543
+//     Phone numbers (digits only, with country code, no +) whose DMs to store.
+//
+//   WHATSAPP_ALLOWED_GROUPS=120363XXXXX@g.us,120363YYYYY@g.us
+//     Full group JIDs to store. Run the bridge once without the filter,
+//     call list_chats via MCP, then copy the JIDs you want here.
+// ---------------------------------------------------------------------------
+
+var (
+	allowedDMs     map[string]struct{} // phone numbers for DMs
+	allowedGroups  map[string]struct{} // full JIDs for groups
+)
+
+// isChatAllowed returns true if the message from chatJID / senderUser should
+// be stored. Groups are matched by their JID; DMs are matched by the sender's
+// phone number (the User part of the JID, digits only).
+func isChatAllowed(chatJID, senderUser string) bool {
+	if strings.HasSuffix(chatJID, "@g.us") {
+		// Group message — check group allowlist
+		_, ok := allowedGroups[chatJID]
+		return ok
+	}
+	// DM — check by sender phone number
+	_, ok := allowedDMs[senderUser]
+	return ok
+}
+
 // Message represents a chat message for our client
 type Message struct {
 	Time      time.Time
@@ -414,6 +447,11 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	chatJID := msg.Info.Chat.String()
 	sender := msg.Info.Sender.User
 
+	// Apply allowlist filter — skip anything not explicitly allowed
+	if !isChatAllowed(chatJID, sender) {
+		return
+	}
+
 	// Get appropriate chat name (pass nil for conversation since we don't have one for regular messages)
 	name := GetChatName(client, messageStore, msg.Info.Chat, chatJID, nil, sender, logger)
 
@@ -791,6 +829,34 @@ func main() {
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
 
+	// Build allowlists from env vars (both default to empty = nothing stored)
+	allowedDMs = make(map[string]struct{})
+	allowedGroups = make(map[string]struct{})
+
+	if raw := os.Getenv("WHATSAPP_ALLOWED_DMS"); raw != "" {
+		for _, num := range strings.Split(raw, ",") {
+			num = strings.TrimSpace(num)
+			if num != "" {
+				allowedDMs[num] = struct{}{}
+			}
+		}
+		logger.Infof("DM filter: storing messages from %d number(s)", len(allowedDMs))
+	} else {
+		logger.Infof("DM filter: DISABLED — no DMs will be stored (set WHATSAPP_ALLOWED_DMS to enable)")
+	}
+
+	if raw := os.Getenv("WHATSAPP_ALLOWED_GROUPS"); raw != "" {
+		for _, jid := range strings.Split(raw, ",") {
+			jid = strings.TrimSpace(jid)
+			if jid != "" {
+				allowedGroups[jid] = struct{}{}
+			}
+		}
+		logger.Infof("Group filter: storing messages from %d group(s)", len(allowedGroups))
+	} else {
+		logger.Infof("Group filter: DISABLED — no groups will be stored (set WHATSAPP_ALLOWED_GROUPS to enable)")
+	}
+
 	// Create database connection for storing session data
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
@@ -1017,6 +1083,18 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 		}
 
 		chatJID := *conversation.ID
+
+		// Apply allowlist filter — skip anything not explicitly allowed.
+		// For history sync we don't have a per-message sender, so for DMs
+		// we match against the chat JID's User part (the other party's number).
+		parsed, parseErr := types.ParseJID(chatJID)
+		senderForFilter := ""
+		if parseErr == nil {
+			senderForFilter = parsed.User
+		}
+		if !isChatAllowed(chatJID, senderForFilter) {
+			continue
+		}
 
 		// Try to parse the JID
 		jid, err := types.ParseJID(chatJID)
