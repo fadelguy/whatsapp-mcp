@@ -1,3 +1,71 @@
+# WhatsApp MCP Server — Privacy Fork
+
+> **⚠️ This is a fork of [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp) with a critical privacy change.**
+
+---
+
+## 🔒 What's Different in This Fork
+
+### Default behavior: store **nothing**
+
+The original project stores every message from every chat — all your DMs, all your groups — into a local SQLite database the moment they arrive.
+
+**This fork flips that default completely.**
+
+By default, **nothing is stored**. No DMs, no groups. The bridge connects to WhatsApp and runs silently. Storage is opt-in, per chat, via environment variables.
+
+### Why this matters
+
+- **Prompt injection protection** — the less data the AI can access, the smaller the attack surface. If a malicious message arrives in an unrelated group, it never reaches the database and can never be fed to an LLM.
+- **Privacy** — your personal conversations, family chats, and work groups are never written to disk unless you explicitly say so.
+- **Minimal footprint** — only the chats you care about are stored.
+
+### How to enable storage
+
+Set one or both environment variables before running the bridge:
+
+```bash
+# Store DMs from specific phone numbers (country code, no + prefix)
+WHATSAPP_ALLOWED_DMS=972501234567,972509876543
+
+# Store messages from specific groups (use list_chats to find JIDs — they never change)
+WHATSAPP_ALLOWED_GROUPS=120363XXXXX@g.us,120363YYYYY@g.us
+```
+
+**Example — monitor two school groups and store DMs from your spouse:**
+```bash
+WHATSAPP_ALLOWED_DMS=972501234567 \
+WHATSAPP_ALLOWED_GROUPS=120363XXXXX@g.us,120363YYYYY@g.us \
+go run main.go
+```
+
+### How to find your group JIDs
+
+Group JIDs are permanent — they never change even if the group name, members, or admins change. To find them:
+
+1. Run the bridge once **without** setting `WHATSAPP_ALLOWED_GROUPS`
+2. Use the MCP `list_chats` tool to see all your chats and their JIDs
+3. Copy the JIDs of the groups you want to monitor
+4. Restart the bridge with `WHATSAPP_ALLOWED_GROUPS` set
+
+### Startup log
+
+On launch the bridge logs exactly what it will and won't store:
+
+```
+DM filter: storing messages from 1 number(s)
+Group filter: storing messages from 2 group(s)
+```
+
+or if nothing is configured:
+
+```
+DM filter: DISABLED — no DMs will be stored (set WHATSAPP_ALLOWED_DMS to enable)
+Group filter: DISABLED — no groups will be stored (set WHATSAPP_ALLOWED_GROUPS to enable)
+```
+
+---
+
 # WhatsApp MCP Server
 
 This is a Model Context Protocol (MCP) server for WhatsApp.
