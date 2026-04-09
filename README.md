@@ -30,6 +30,9 @@ WHATSAPP_ALLOWED_DMS=972501234567,972509876543
 
 # Store messages from specific groups (use list_chats to find JIDs — they never change)
 WHATSAPP_ALLOWED_GROUPS=120363XXXXX@g.us,120363YYYYY@g.us
+
+# CAPTURE ALL MODE — store messages from every group (see below)
+WHATSAPP_ALLOWED_GROUPS=*
 ```
 
 **Example — monitor two school groups and store DMs from your spouse:**
@@ -38,6 +41,18 @@ WHATSAPP_ALLOWED_DMS=972501234567 \
 WHATSAPP_ALLOWED_GROUPS=120363XXXXX@g.us,120363YYYYY@g.us \
 go run main.go
 ```
+
+### Capture All Mode
+
+Set `WHATSAPP_ALLOWED_GROUPS=*` to capture messages from **every group** your WhatsApp account is in:
+
+```bash
+WHATSAPP_ALLOWED_GROUPS=* go run main.go
+```
+
+This is useful when you don't know the JIDs of groups yet and want to discover them. The bridge will store messages from all groups as they arrive, allowing you to use `list_chats` to find JIDs later.
+
+**Note:** Only *new* messages arriving after the bridge starts are captured — historical messages are not fetched retroactively.
 
 ### How to find your group JIDs
 
