@@ -953,7 +953,7 @@ func main() {
 			} else if emptied > 0 {
 				logger.Infof("Retention cleanup: removed %d empty chat entries", emptied)
 			}
-			time.Sleep(time.Hour)
+			time.Sleep(24 * time.Hour)
 		}
 	}()
 
