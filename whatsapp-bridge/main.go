@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"net/http"
 	"os"
 	"os/signal"
@@ -129,6 +130,31 @@ func NewMessageStore() (*MessageStore, error) {
 // Close the database connection
 func (store *MessageStore) Close() error {
 	return store.db.Close()
+}
+
+// DeleteMessagesOlderThan deletes messages older than the given number of days.
+// Returns the number of messages deleted.
+func (store *MessageStore) DeleteMessagesOlderThan(days int) (int64, error) {
+	cutoff := time.Now().AddDate(0, 0, -days)
+	result, err := store.db.Exec(
+		"DELETE FROM messages WHERE timestamp < ?",
+		cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// DeleteEmptyChats removes chat entries that have no messages.
+func (store *MessageStore) DeleteEmptyChats() (int64, error) {
+	result, err := store.db.Exec(
+		"DELETE FROM chats WHERE jid NOT IN (SELECT DISTINCT chat_jid FROM messages)",
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // Store a chat in the database
@@ -859,6 +885,15 @@ func main() {
 		logger.Infof("Group filter: DISABLED — no groups will be stored (set WHATSAPP_ALLOWED_GROUPS to enable)")
 	}
 
+	// Message retention (default 7 days)
+	retentionDays := 7
+	if raw := os.Getenv("WHATSAPP_MESSAGE_RETENTION_DAYS"); raw != "" {
+		if days, err := strconv.Atoi(raw); err == nil && days > 0 {
+			retentionDays = days
+		}
+	}
+	logger.Infof("Message retention: %d days (set WHATSAPP_MESSAGE_RETENTION_DAYS to change)", retentionDays)
+
 	// Create database connection for storing session data
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
@@ -901,6 +936,26 @@ func main() {
 		return
 	}
 	defer messageStore.Close()
+
+	// Run initial cleanup on startup, then every hour
+	go func() {
+		for {
+			deleted, err := messageStore.DeleteMessagesOlderThan(retentionDays)
+			if err != nil {
+				logger.Errorf("Retention cleanup error: %v", err)
+			} else if deleted > 0 {
+				logger.Infof("Retention cleanup: deleted %d messages older than %d days", deleted, retentionDays)
+			}
+			// Also clean up empty chat entries
+			emptied, err := messageStore.DeleteEmptyChats()
+			if err != nil {
+				logger.Errorf("Empty chat cleanup error: %v", err)
+			} else if emptied > 0 {
+				logger.Infof("Retention cleanup: removed %d empty chat entries", emptied)
+			}
+			time.Sleep(time.Hour)
+		}
+	}()
 
 	// Setup event handling for messages and history sync
 	client.AddEventHandler(func(evt interface{}) {

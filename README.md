@@ -54,14 +54,28 @@ This is useful when you don't know the JIDs of groups yet and want to discover t
 
 **Note:** Only *new* messages arriving after the bridge starts are captured — historical messages are not fetched retroactively.
 
+### Message Retention
+
+Messages are automatically deleted after a configurable number of days (default: **7**). The cleanup runs on startup and then every hour.
+
+```bash
+# Keep messages for 30 days instead of the default 7
+WHATSAPP_MESSAGE_RETENTION_DAYS=30 go run main.go
+```
+
+Set to `0` to disable automatic deletion (messages are kept indefinitely).
+
+The cleanup also removes chat entries that have no messages left after pruning.
+
 ### How to find your group JIDs
 
 Group JIDs are permanent — they never change even if the group name, members, or admins change. To find them:
 
-1. Run the bridge once **without** setting `WHATSAPP_ALLOWED_GROUPS`
-2. Use the MCP `list_chats` tool to see all your chats and their JIDs
-3. Copy the JIDs of the groups you want to monitor
-4. Restart the bridge with `WHATSAPP_ALLOWED_GROUPS` set
+1. Run the bridge with `WHATSAPP_ALLOWED_GROUPS=*`
+2. Wait for groups to send messages (only new messages are captured)
+3. Use the MCP `list_chats` tool to see all discovered chats and their JIDs
+4. Copy the JIDs of the groups you want to monitor
+5. Restart the bridge with `WHATSAPP_ALLOWED_GROUPS=jid1,jid2,...`
 
 ### Startup log
 
